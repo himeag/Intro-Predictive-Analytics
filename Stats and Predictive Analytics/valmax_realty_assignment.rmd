@@ -1,0 +1,173 @@
+---
+title: "Case Study: Valmax Reality Case"
+author: "Meag Tessmann"
+date: "Oct 6-13, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse) 
+library(janitor)
+```
+
+## Load data
+
+```{r}
+# Load data
+set.seed(123)
+valmax <- read_csv("valmax.csv")
+
+# Inspect data
+head(valmax)
+glimpse(valmax)
+summary(valmax)
+
+```
+
+
+```{r}
+# no ticks here...
+valmax <- clean_names(valmax, 'lower_camel')
+
+# add difference column, clean data types 
+valmax <- valmax %>% 
+  mutate(
+    difference = askingPrice - sellingPrice,
+    broker = factor(broker),
+    house = as.integer(house)
+  )
+
+```
+
+
+## Questions
+
+### Q1
+
+Plot the difference between asking vs selling price by broker. Does there appear to be a difference?
+
+<p style="color:blue">
+Valmax does appear to have a smaller difference than other brokers, with a mean $4653 lower than other brokers and median $6500 lower. 
+</p>
+```{r}
+
+# get an idea of the data
+valmax %>%
+  group_by(broker) %>%
+  ggplot(aes(broker, difference)) + 
+  geom_boxplot()
+
+sum_stats <- valmax %>%
+  group_by(broker) %>%
+  summarize(
+    mean(difference),
+    median(difference), 
+    sd(difference),
+    NROW(broker)
+  )
+
+sum_stats
+```
+
+### Q2
+
+Calculate and interpret 95% CIs for mean difference by broker. 
+
+<p style="color: blue"> 
+While there is a lot of overlap, Valmax does have a lower confidence interval both on the upper and lower ends, suggesting that they do have a slightly lower difference between asking and selling price than other brokers.
+</p>
+
+```{r}
+# seperate out summary stats to one object per broker
+v_stats <- sum_stats %>%
+  filter(broker=='valmax')
+
+o_stats <- sum_stats %>%
+  filter(broker=='others')
+ 
+# create function to compute CIs
+calc_ci_upper <- function(s_mean, s_sd) {
+  s_mean+1.96*(s_sd)
+}
+calc_ci_lower <- function(s_mean, s_sd) {
+  s_mean-1.96*(s_sd)
+}
+
+# computer CI upper and lower  bounds for each broker
+v_ci_upper <- calc_ci_upper(v_stats$`mean(difference)`, v_stats$`sd(difference)`)
+o_ci_upper <- calc_ci_upper(o_stats$`mean(difference)`, o_stats$`sd(difference)`)
+v_ci_lower <- calc_ci_lower(v_stats$`mean(difference)`, v_stats$`sd(difference)`)
+o_ci_lower <- calc_ci_lower(o_stats$`mean(difference)`, o_stats$`sd(difference)`)
+
+v_ci_lower
+v_ci_upper
+o_ci_lower
+o_ci_upper
+
+# plot confidence intervals
+valmax %>% 
+  ggplot(aes(difference, color=broker)) + 
+  geom_density() + 
+  geom_vline(xintercept = v_ci_lower, lty=2, color='light sea green') + 
+  geom_vline(xintercept = v_ci_upper, lty=2, color='light sea green') + 
+  geom_vline(xintercept = o_ci_lower, lty=2, color='coral') + 
+  geom_vline(xintercept = o_ci_upper, lty=2, color='coral') + 
+  theme_minimal()
+  
+
+
+```
+
+### Q3
+
+Compute a t-statistic for mean difference by broker. 
+
+```{r}
+
+# break apart observations by broker
+
+val_obs <- valmax %>%
+  filter(broker=="valmax") %>%
+  select(difference)
+val_obs <- as.vector(val_obs$difference)
+oth_obs <- valmax %>%
+  filter(broker=='others') %>%
+  select(difference)
+oth_obs <- as.vector(oth_obs$difference)
+
+# calculate t-statistic, assuming 'others' broker as the null distribution
+
+t_stat <- t.test(val_obs, oth_obs)
+
+t_stat$statistic
+
+```
+
+### Q4
+
+What is the p-value associated with the t-statistic you have computed? Use a 2-tailed test by doubling the p-value obtained with the `pt()` function. (Use the built in t.test function to check your work. Your results should be very close.)
+
+```{r}
+
+#degrees of freedom 
+df <- v_stats$`NROW(broker)`-1
+
+#calculate 2-tailed p-value for t-statistic
+pt(t_stat$statistic, df)*2
+
+#compare to built in t-test function's p-value calculation
+t_stat$p.value
+
+```
+
+### Q5
+
+Are the clients' complaints justified? Write a paragraph in which you weigh the evidence and argue a position. 
+
+<p style="color: blue">
+We have sufficient evidence (α=.05) to reject the null hypothesis: 'The mean difference between asking and selling prices when Valmax is the broker is equal to the mean of other brokers' differences'. There is only a 4.3% probability that there is no difference between Valmax and others' difference in asking and selling prices. This implies Valmax clients are justified in either or both of two complaints: being advised to set an asking price for their house too low or to buy a house for too much money. 
+</p>
+
+
+

@@ -1,0 +1,164 @@
+---
+title: "IS 6489: Module 2 | Conley Fisheries"
+author: "Meag Tessmann"
+date: "29 Sept 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages and create empty data frame
+
+```{r}
+# Load packages
+library(tidyverse) 
+
+# Define n
+n <- 1000
+
+# Empty data frame for 1000 simulated days
+data <- data.frame(day = seq(1:n),
+                demand = NA, # demand in Rockport
+                quantity = NA, # quanity sold
+                price = NA, # price per pound
+                cost = 10000, # cost of daily operations
+                earnings = NA)
+
+head(data)
+
+```
+
+## Questions
+
+### Q1
+
+Plot simulated earnings.
+
+```{r}
+# Define variables
+set.seed(123)
+boat_cost <- 10000
+lbs_fish <- 3500
+price_glou <- 3.25
+rock_quant <- c(0, 1000, 2000, 3000, 4000, 5000, 6000)
+rock_prob <- c(.02, .03, .05, .08, .33, .29, .22)
+rock_demand_mu <- 3.65
+rock_demand_sig <- .2
+
+profit_glou <- price_glou*lbs_fish-boat_cost
+
+
+# Fill in data with simulated values
+data <- data %>%
+  mutate(
+    demand = sample(
+      rock_quant, 
+      size=n, 
+      replace = T, 
+      prob = rock_prob),
+    quantity = ifelse(demand <= lbs_fish, demand, lbs_fish),
+    price = rnorm(n, rock_demand_mu, rock_demand_sig),
+    earnings = price * quantity - boat_cost
+  )
+  
+
+# Plot simulated values, with lines at breaking even and profit if only selling at glou
+
+ggplot(data, aes(earnings)) +
+  geom_density() +
+  geom_vline(xintercept = 0, col = 2, lty = 2) +
+  geom_vline(xintercept = profit_glou, col = 2) +
+  theme_minimal()+
+  labs(title = "Distribution of profit")
+
+```
+
+### Q2
+
+What is P(F > 1375)?
+<p style="color:blue">
+.83
+</p>
+```{r}
+
+# Calculate percentage of time earnings will be above 1375
+(data$earnings > 1375) %>%
+  mean
+```
+
+### Q3
+
+What is P(F < 0)
+<p style="color:blue">
+.097
+</p>
+```{r}
+
+# Calculate percentage of time earnings will be a loss
+(data$earnings < 0) %>%
+  mean
+```
+
+### Q4
+
+What is the expected value (mean) of F?
+<p style="color:blue">
+1898.962
+</p>
+
+```{r}
+# Calculate mean earnings
+mean(data$earnings)
+
+```
+
+
+### Q5
+
+What is your advice to Clint Conley?  Write one paragraph in which you argue a position.
+
+<div style="color:blue">
+Clint, 
+
+I understand you're debating whether to sell your daily catch at Gloucester or Rockport ports. Gloucester is a safe, steady bet if you feel more comfortable with having a gaurenteed daily cash flow.
+
+If you have the savings and the stomach for a more volatile daily cash flow, I would suggest selling everyday at Rockport port. On average, you'll make $524 more each day if you sell at Rockport than if you sell at Gloucester - that's $191k more every year! Selling at Rockport will have it's bad days, though. You'll likely have to toss part of your catch about once per week and all of your catch about 7 days a year. Every other day, though, you'll be earning over $2660 to make up for it. 
+
+Good luck.
+</div>
+
+
+```{r}
+
+# summary for earnings & quantity
+data$earnings %>%
+  summary
+data$quantity %>%
+  summary
+
+#Difference in means of two ports
+mean(data$earnings) - profit_glou
+
+#Difference in means of two ports
+(mean(data$earnings) - profit_glou)*365
+
+# how often are fish being tossed?
+
+ggplot(data, aes(quantity)) +
+  geom_density()
+
+mean(data$quantity)
+
+# days per year tossing all
+(data$quantity == 0) %>%
+  mean * 365
+
+# days per week tossing some 
+(data$quantity < 3500) %>%
+  mean * 7
+```
+
+
+

@@ -1,0 +1,239 @@
+---
+title: "Case Study: Velo.com"
+author: "Meag Tessmann"
+date: "Oct 14-20"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Load data and packages
+
+```{r}
+library(tidyverse)
+v <- read_csv("velo.csv")
+
+summary(v)
+
+# Setup
+library(tidyverse)
+library(dplyr)
+set.seed(123)
+```
+
+Data dictionary:
+*uid*: customer id
+*country*:  country of residence
+*gender*:  gender
+*spent*: dollar amount spent over multiple visits during one month.
+*group*: GRP A is the control, presented with the old site; GRP B is the treatment group, presented with the new site.
+*visits*: the number of customer visits to velo.com during the month of the experiment.
+
+## Questions
+
+## Q1
+
+Plot the distribution of `spent` and comment on the best measure of central tendency. Do mean and standard deviation have much meaning in this distribution?
+<p style="color: blue">
+Median is the best measure of central tendency due to a long tail, which causes both the average and standard deviation to be misleadingly high.
+</p>
+
+```{r}
+
+ggplot(v, aes(spent)) +
+  geom_histogram(binwidth = 100) + 
+  ggtitle("Histogram of money spent")
+
+
+```
+
+## Q2
+
+Create a summary table with the n, mean, median, standard deviation and total of `spent` by group.  Include also a calculation of the the proportion of non-purchases in each group.
+
+```{r}
+
+#create new boolean purchase column
+v <- v %>%
+  mutate(
+    purchase = ifelse(spent==0,0,1)
+  ) 
+
+# create summary table
+v %>%
+  group_by(group) %>%
+  summarize(
+    n = length(spent),
+    mean = mean(spent),
+    median = median(spent),
+    `std dev` = sd(spent),
+    `total spent` = sum(spent),
+    `prop. non-purchases` = sum(purchase)/length(spent)
+  )
+
+
+```
+
+##  Q3
+
+Is spending significantly higher in the treatment group?  Hint: compare the medians. What is the null hypothesis for this comparison?
+<p style="color:blue">
+H0: The median money spent in both groups comes from the same distribution. <br/>
+HA: The median money spent in group B is higher than the median money spent in group A
+</p>
+<p style="color:blue">
+The CI when calculating a bootstrap distribution of medians from the two groups' difference in spending includes 0. We cannot reject the null hypothesis that there is a difference in populations from which these two samples came from. This implies that the treatment did not have a statistically significant effect on the amount spent per customer. 
+</p>
+
+```{r}
+
+# Initialize empty vector
+boot_dist_spent <- NULL
+
+# simulation count
+sims <- 1000
+
+# subset data
+groupA <- filter(v, group=="GRP A")
+groupB <- filter(v, group=="GRP B")
+
+# run simulation
+set.seed(123)
+for(i in 1:sims) {
+  boot_groupA <- sample(groupA$spent, replace=T)
+  boot_groupB <- sample(groupB$spent, replace=T)
+  boot_dist_spent[i] <- median(boot_groupB) - median(boot_groupA)
+}
+
+# calculate 95% confidence intervals
+ci_lower_spent <- quantile(boot_dist_spent, .025)
+ci_upper_spent <- quantile(boot_dist_spent, .975)
+
+# plot bootstrap distribution
+ggplot(data.frame(median = boot_dist_spent), aes(median)) + 
+  geom_histogram(binwidth = 3) + 
+  geom_vline(xintercept = 0, col=3, lty=5) + 
+  geom_vline(xintercept = ci_upper_spent, col=4, lty=5) + 
+  geom_vline(xintercept = ci_lower_spent, col=4, lty=5) +
+  theme_minimal() + 
+  ggtitle("Bootstrap distribution of difference in sample medians with 95% confidence intervals in blue")
+
+```
+
+## Q4
+
+Is the proportion of nonpurchase lower in the treatment group?  What is the null hypothesis for this comparison?
+<p style="color:blue">
+H0: The proportion of those who did not purchase comes from the same population as the proportion of those who did purchase.<br/>
+HA: The proportion of those who did not purchase is higher in the population of group A than that of group B.
+</p>
+<p style="color:blue">
+By setting a boolean column in each groups' dataframe for 'did purchase', we can use the mean of this column to calculate the proportion of each sample population who purchased (spent any money). Using this column to create a bootstrap distribution, we see that the 95% confidence interval does not include 0. This implies that there is a statistically significant difference between the control and treatment group in whether they purchased or not. 
+</p>
+<p style="color:blue; font-style: oblique">
+** Note: The question would have the alternative hypothesis be *lower* not *higher*. Though if I were Sarah, I would be hypothesizing it's higher given she thinks people are not checking out who would in the treatment group, so that's what I put above. 
+</p>
+```{r}
+
+# initialize empty vector 
+boot_dist_purch <- NULL
+
+# run simulation
+set.seed(123)
+for (i in 1:sims) {
+  boot_groupA <- sample(groupA$purchase, replace=T)
+  boot_groupB <- sample(groupB$purchase, replace=T)
+  boot_dist_purch[i] <- mean(boot_groupB) - mean(boot_groupA)
+}
+
+# calculate 95% confidence intervals
+ci_lower_purchase <- quantile(boot_dist_purch, .025)
+ci_upper_purchase <- quantile(boot_dist_purch, .975)
+
+# plot bootstrap distribution
+ggplot(data.frame(mean = boot_dist_purch), aes(mean)) + 
+  geom_histogram() + 
+  geom_vline(xintercept = 0, col=2, lty=5) +
+  geom_vline(xintercept = ci_lower_purchase, col=4, lty=5) + 
+  geom_vline(xintercept = ci_upper_purchase, col=4, lty=5) +
+  theme_minimal() + 
+  ggtitle("Bootstrap distributions of percent purchasing customers with 95% CI in blue")
+
+
+```
+
+## Q5
+
+What course of action should Sarah recommend to the management at velo.com?
+
+<p style="color:blue">
+Greetings, 
+</p>
+<p style="color:blue">
+After running an A/B test with the redesigned checkout for one month, the data suggests we will see an increase in revenue if we transition to the new checkout system. During the test, we saw the treatment test group result in a statistically significant increase in percentage of visitors purchasing from our site. We're likely (CI=95%) to see a .2% to 1.3% lift in purchase rates with the new system over the control of our current checkout system.Given similar monthly traffic patterns experienced during the test, this translates to a monthly revenue increase of roughly $110,500 to $709,500. This was calculated using bootstrap method for comparing means. 
+</p>
+<p style="color:blue">
+We initially thought this bug was more likely to affect those who visited frequently to create highly customized purchases, which we assumed were of higher revenue value. However, we did not see a difference in amount spent per customer, which implies that this change could benefit every visitor, not only those who are working on a highly customized and expensive orders.  
+</p>
+<p style="color:blue">
+We did not see any difference between the treatment and control groups for either the country of or number of visits by the customer. 
+</p>
+<p style="color:blue">
+Hope this helps. Don't hesitate to reach out with any questions or comments. 
+<br/>-Sarah
+</p>
+  
+``` {r}
+
+# EDA: difference in visits by purchase and group
+v %>%
+  mutate(purchase=factor(purchase)) %>%
+  group_by(purchase, group) %>%
+  ggplot(aes(purchase, visits, color=group)) + 
+  geom_boxplot() +
+  facet_wrap(~country) + 
+  ggtitle("Visit count by purchase and treatment group")
+
+# EDA: country matter on how much they spend?
+v %>%
+  mutate(purchase=factor(purchase)) %>%
+  group_by(group) %>%
+  filter(purchase==1) %>%
+  ggplot(aes(purchase, spent, color=group)) + 
+  geom_boxplot() +
+  facet_wrap(~country) + 
+  ggtitle("Amount spent by purchase and treatment group")
+
+
+
+# Find range of possible monthly revenue increase given 95% CI
+
+# average spent per person in group A
+per_person_a <- v %>%
+  filter(group=="GRP A") %>%
+  summarize(
+    sum = sum(spent)/length(spent)
+  )
+# average spent per person in group B
+per_person_b <- v %>%
+  filter(group=="GRP B") %>%
+  summarize(
+    sum = sum(spent)/length(spent)
+  )
+
+# find dollar ammounts associated with 95% CI ranges
+inc_025 <- per_person_a$sum[1]*ci_lower_purchase
+inc_0975 <- per_person_a$sum[1]*ci_upper_purchase
+
+
+# estimate monthly revenue by multiplying per visitor increase by number of monthly visitors seen during test
+inc_monthly_low <- inc_025*nrow(v)
+inc_monthly_high <- inc_0975*nrow(v)
+
+
+```
+
+

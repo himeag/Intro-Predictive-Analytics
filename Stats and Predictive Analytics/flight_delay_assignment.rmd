@@ -1,0 +1,311 @@
+---
+title: "IS 6489: Module 1, Assignment 1"
+author: "Meag Tessmann"
+date: "Sept 23, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Load packages and data
+
+```{r}
+# Load packages
+library(tidyverse) # lubridate for wrangling dates is included in tidyverse
+library(dplyr)
+
+# Load data
+d <- read_csv("flight_delay.csv")
+
+# Inspect data
+glimpse(d)
+summary(d)
+
+```
+
+Note that the back ticks in the column names allow the inclusion of spaces.
+
+The dataset has some problems, some of which are clear when using glimpse():
+
+- Scheduled departure time and scheduled arrival time are date/time variables, which is appropriate. But actual arrival time is a character variable, as is arrival delay in minutes and the delay indicator. A little investigation shows that the presence of a character value, "canceled," has caused the values in these columns to be interpreted as character values.
+- Day of week is numeric. It should be a factor variable. Likewise, route code is numeric; it also should be a factor variable.
+- There are rows at the bottom of the table populated entirely by NAs.
+- Number of passengers has no observations for MDA.
+
+Please verify these points yourself. A handy thing to do is to look at the data in the RStudio file viewer (click on the spreadsheet icon to the right of the data object in the Environment pane), and explore it visually for anomalies. Another useful tactic is to use the summary() function. And still another tactic is to use the table() function for each column with the useNA argument set to "always" (useNA = "always"). This will show you the unique values in each column, including NAs.
+
+```{r}
+# Use table() to peruse unique values in each column
+table(d[,1], useNA = "always") # Airline
+table(d[,2], useNA = "always") # "Origin airport"   
+table(d[,3], useNA = "always") # "Destination airport"
+table(d[,4], useNA = "always") # "Departure date" 
+table(d[,7], useNA = "always") # "Actual arrival time" 
+table(d[,8], useNA = "always") # "Arrival delay in minutes"
+table(d[,9], useNA = "always") # "Delay indicator" 
+table(d[,10], useNA = "always") # "Day of Week" 
+table(d[,11], useNA = "always") # Route code
+table(d[,12], useNA = "always") # Number of passengers
+```
+
+
+## Prepare data for analysis
+
+Do some cleaning. Our focus will be on the delay, departure and arrival variables so we won't address other data problems or transform other data types.
+
+- Remove the 10 NA's at the bottom of the data set.
+- We can't remove the rows with "Cancelled" in the "Actual arrival time" column because that information is important to calculate on time vs. delayed flights according to FAA definitions. So, use parse_time() to convert "Actual arrival time" to a time variable and produce NAs for "cancelled."
+- Convert "Arrival delay in minutes" into a numeric variable type with as.numeric(). This will automatically convert "N\\A" into NA.
+- Likewise convert "Delay indicator" into a numeric variable type with as.numeric(). This will automatically convert "N\\A" into NA. 
+- Make "Day of Week" and "Route Code" into factor variables. 
+- Change "Route Code" into actual route names.
+- Calculate flight length variables so we can compare scheduled vs. actual flight lengths.
+
+```{r}
+# Remove bottom 10 rows, clean, feature engineer
+
+d <- d[1:360,] %>% 
+  mutate(delay = as.numeric(`Arrival delay in minutes`),
+         `Delay indicator` = as.numeric(`Delay indicator`),
+         `Day of Week` = factor(`Day of Week`),
+         `Route Code` = factor(`Route Code`),
+         `Route Code` = recode_factor(`Route Code`, "1" = "DFW/MSY", "2" = "MSY/DFW", "3" = "MSY/PNS", "4" = "PNS/MSY"),
+         actual_arrival = parse_time(`Actual arrival time`),
+         scheduled_flight_length =`Scheduled arrival time` - `Scheduled departure time`,
+         actual_flight_length = actual_arrival - `Scheduled departure time`,
+         scheduled_flight_length = as.numeric(scheduled_flight_length)/60,
+         actual_flight_length = as.numeric(actual_flight_length)/60) 
+
+glimpse(d)
+summary(d)
+```
+
+## Questions
+
+Lightly comment your code and use pipes for readability.
+
+Comment briefly on each of the questions, as directed.  Only the the final question requires a more lengthy (~ 2 paragraph) response.
+
+
+### Q1
+
+Compute the mean, median, 90th percentile, and standard deviation of arrival delay minutes for RegionEx flights. Do the same for MDA flights. How do the two airlines compare?
+
+<p style="color:blue">*Answer* - 
+While the majority of RegionEx flights have shorter delays than MDA, and in fact has a higher percentage of flights arriving early, they do have a handful of flights that are very delayed. These outliers are driving up the average delay time for RegionEx.
+</p>
+
+```{r}
+# Filter out n/a of the delay column, and summarize the data by airline
+d %>%
+  filter(!is.na(delay)) %>%
+  group_by(Airline) %>%
+  summarize(
+    mean(delay),
+    median(delay),
+    quantile(delay, .9),
+    sd(delay)
+)
+
+
+# boxplot, for more information
+ggplot(d, aes(Airline, delay)) + 
+  geom_boxplot()
+
+```
+
+
+### Q2
+
+Inspect the distribution of RegionEx's arrival delays by constructing a histogram of the number of arrival delay minutes of RegionEx's flights. Do the same for MDA's flights. How do these two distributions compare? Hint:  use facet_wrap().
+
+<p style="color:blue">*Answer* - 
+RegionEx has a lot more flights than MDA. While all of MDA flights are arrive within an hour of schedule, RegionEx has a number of flights which are severely delayed. 
+</p>
+```{r}
+# Make a histogram, feceted by Airline
+ggplot(d, aes(delay)) + 
+  geom_histogram() + 
+  facet_wrap(~Airline)
+```
+
+### Q3
+
+In the tables below, we see that although RegionEx has a higher percentage of delayed flights in the aggregate (percent_delay in table 2: 26.2 vs 25.8), when we look at each route individually, RegionEx does no worse than MDA on any route (percent_delay in table 1). Moreover, on routes between DFW and MSY, it experiences a lower fraction of delayed flights than MDA. How do you explain this puzzling result?
+
+<p style="color:blue">*Answer* - 
+The percentage calculated includes flights which are cancelled. When these three flights are not counted towards the average, MDA has a higher percent delay by .3%. This is because MDA has cancelled flights where RegionEx does not. 
+</p>
+
+
+```{r}
+# Create summary tables
+
+# Table 1:  by Airline and route
+d %>% 
+  count(Airline, `Route Code`, `Delay indicator`) %>% 
+  group_by(Airline, `Route Code`) %>% 
+  mutate(percent_delay = (n/sum(n)*100) %>% round(1)) %>% 
+  filter(`Delay indicator`==1) %>% 
+  arrange(`Route Code`)
+
+# Table 2: by Airline.  
+d %>% 
+  count(Airline, `Delay indicator`) %>% 
+  group_by(Airline) %>% 
+  mutate(percent_delay = (n/sum(n)*100) %>% round(1)) %>% 
+  filter(`Delay indicator`==1) 
+  
+# Check if numbers change by removing cancelled flights, denoted by n/a in the delay column
+d %>% 
+  filter(!is.na(delay)) %>%
+  count(Airline, `Delay indicator`) %>% 
+  group_by(Airline) %>% 
+  mutate(percent_delay = (n/sum(n)*100) %>% round(1)) %>% 
+  filter(`Delay indicator`==1) 
+
+ 
+```
+
+
+
+
+### Q4
+
+Compare the scheduled flight durations for the two airlines on each of their four routes. Compare the actual flight durations. What do you notice? If the two airlines had the same scheduled duration, what impact would this have on their delay records?
+
+<p style="color:blue">*Answer* - 
+MDA's flight durations are shorter for each route code - 10 min for DFW<>MSY and 5 min for PNS<>MSY. When we assume MDA durations for RegionEx as well,, RegionEx's percent delayed is 7.9%, while MDA's is 26.5%. Furthermore, without the 15 minute grace window of all flights on theses routes, over 50% of RegionEx flights were on time or early, while only 9.4% of MDA flights were.
+</p>
+
+```{r}
+
+# summary stats for durations
+d %>%
+  filter(!is.na(delay)) %>%
+  group_by(Airline, `Route Code`) %>%
+  summarize(
+    mean(scheduled_flight_length),
+    sd(scheduled_flight_length)
+  )
+
+# Scheduled ~ actual duration
+d %>% 
+  filter(delay<50) %>%
+  ggplot(aes(scheduled_flight_length,actual_flight_length, color=Airline)) + 
+  geom_point() + 
+  facet_wrap(~`Route Code`)
+
+
+
+## What would delays look like if we used MDA scheduled flight durations for RegionEx? 
+
+# Change RegionEx times to MDA times
+d_extended <- d %>%
+  filter(!is.na(delay)) %>%
+  mutate(scheduled_flight_length = ifelse(`Route Code`=="DFW/MSY" & Airline=="RegionEx",scheduled_flight_length+10, scheduled_flight_length),
+         scheduled_flight_length = ifelse(`Route Code`=="MSY/DFW" & Airline=="RegionEx",scheduled_flight_length+10, scheduled_flight_length),
+         scheduled_flight_length = ifelse(`Route Code`=="PNS/MSY" & Airline=="RegionEx",scheduled_flight_length+5, scheduled_flight_length),
+         scheduled_flight_length = ifelse(`Route Code`=="MSY/PNS" & Airline=="RegionEx",scheduled_flight_length+5, scheduled_flight_length))
+
+# Update delay counts
+d_extended <- d_extended %>% 
+  mutate(delay = actual_flight_length - scheduled_flight_length,
+         `Delay indicator` = ifelse(delay<15,0,1)
+         )
+
+# plot times with RegionEx extended durations
+d_extended %>% 
+  filter(delay<50) %>%
+  ggplot(aes(Airline, delay)) + 
+    geom_boxplot() + 
+    ggtitle("Delay times assuming MDA scheduled flight durations")
+
+# Revisiting average delays with extended durations
+  
+d_extended %>% 
+  filter(!is.na(delay)) %>%
+  count(Airline, `Delay indicator`) %>% 
+  group_by(Airline) %>% 
+  mutate(percent_delay = (n/sum(n)*100) %>% round(1)) %>% 
+  filter(`Delay indicator`==1) 
+
+
+# Check stats with new durations
+d_extended %>% 
+  group_by(Airline) %>%
+  summarize(
+    mean(delay),
+    median(delay))
+
+# Find IQR and calculate outlier percentage
+d_extended %>%
+  filter(Airline=="RegionEx") %>%
+  summarize(
+    first_quart = quantile(delay, .25),
+    third_quart = quantile(delay, .75),
+    outlier = abs(1.5*(first_quart-third_quart))
+  )  
+
+outliers <- d_extended %>%
+  filter(delay>16.5)
+
+nrow(outliers)/nrow(d_extended)
+
+# Add column to note if on-time with extended durations, irrelevent of 15 min window
+d_extended <- d_extended %>%
+  mutate(
+    on_time = ifelse(delay<1,1,0)
+  )
+
+# Check percent on-time
+prop.table(table(d_extended$Airline, d_extended$on_time), margin=1)
+
+#Random other inquiries checking for correlations
+
+ggplot(d, aes(`Scheduled departure time`, delay, color=Airline)) + 
+  geom_point()
+
+ggplot(d, aes(`Day of Week`, delay, color=Airline)) + 
+  geom_point()
+
+d %>%
+  filter(Airline=="RegionEx") %>%
+  ggplot(aes(`Day of Week`, delay,color=`Route Code`)) + 
+  geom_point()
+
+d %>%
+  filter(Airline=="RegionEx", `Day of Week`==2||6) %>%
+  ggplot(aes(`Number of passengers`, delay,color=`Route Code`)) + 
+  geom_point()
+
+
+
+
+```
+
+
+## Q5
+
+Does the data support the claim that the on‐time performance of RegionEx is worse than that of MDA? Write one paragraph in which you argue a position.
+
+<p style="color:blue"> *Answer* - 
+
+Robert, 
+
+Our times do look bad on the surface. However, the data for our four main routes (DSF<>MSY and MSY<>PSN) suggests our performance is actually better than that of MDA, with a few outliers. 
+
+Our current scheduled flight durations are 10 min and 5 min shorter than MDA's. When we assume the same duration MDA uses for each route, our numbers are better than theirs: RegionEx's percent delayed is 7.9%, while MDA's is 26.5%. Furthermore, if we remove the 15 minute grace window of all flights on theses routes, over 50% of RegionEx flights were on time or early, while only 9.4% of MDA flights were. On a sidenote, MDA had 3 cancelled flights for the month while we had none. 
+
+It's important to note that we do have significant delays on ~8% of our flights which we could address. These delays occur on Tuedays and Saturdays when flights on routes DFW<>MSY have ~180 passengers and on routes PNS<>MSY have over 100 passengers.
+
+I suggest we offer to amend our scheduled flight times to match MDA, which should result in a significant decrease in our delay numbers going forward.
+
+Cheers.
+</p>
+
+
+

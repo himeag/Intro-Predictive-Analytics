@@ -1,0 +1,383 @@
+---
+title: "IS 6489: Module 8 | BioImplants, Phase 1"
+author: "Meag Tessmann"
+date: "Nov 10-17, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load data and packages
+
+```{r}
+library(tidyverse)
+library(caret)
+library(pROC)
+
+bi <- read_csv("bioimplants.csv")
+
+
+```
+
+## Description of Data
+
+- *age*:   age of employee in years.	
+- *business_travel*: amount of job-related employee travel.            
+- *department*:  department at the company in which the employee works.
+- *distance_from_home*: travel distance to workplace from  employee's home, in miles.
+- *education*:  employee's level of education.
+- *education_field*:  disciplinary area of employee's education.
+- *environment_satisfaction*: employee's satisfaction with the work environment.
+- *gender*: Male/Female                     
+- *job_involvement*:  employee's self-reported level of psychological and emotional  participation in work, profession, and company.
+- *job_level*: the level of responsibility associated with the position, from entry level,  intermediate level, first-level management, middle-level management to top-level management (chiefs). 
+- *job_role*: type of position at the company.
+- *job_satisfaction*: self-reported job satisfaction.
+- *marital_status*: Single, Married, Divorced.
+- *monthly_income*: salary per month in $.          
+- *num_companies_worked*: number of companies at which the employee has previously worked.
+- *over_time*:  indicator variable for whether the employee has worked more than 40 hours per week.   
+- *percent_salary_hike*: the percentage increase in  employee's salary in 2016 from 2015.     
+- *performance_rating*:  supervisor's assessment of employee's performance.
+- *relationship_satisfaction*:  employee's self-reported level of  satisfaction with relationships at work.
+- *stock_option_level*:  indicator for the relative value of the stock options available to the employee.       
+- *total_working_years*: employee's total number of years in the workforce.
+- *training_times_last_year*:  number of trainings attended by employee in 2016.
+- *work_life_balance*: employee's self-reported work-life balance in current role at the company.     
+- *years_at_company*:  number of years the employee has worked at the company.
+- *years_in_current_role*: number of years the employee has worked at the company in current role.     
+- *years_since_last_promotion*: number of years since the employee's last promotion.
+- *years_with_curr_manager*:  number of years the employee has worked at the company with current supervisor.  
+- *attrition*: indicator for whether the employee left the company in 2016.
+- *employee_number*: employee ID number.
+
+## Data Preparation
+
+
+**Cleaning**. Remove employee_id and make job_level a factor.
+
+```{r}
+bi <- bi %>% 
+  dplyr::select(-employee_number) %>% 
+  mutate(job_level = factor(job_level))
+
+```
+
+This is the dataset you will use in Q1 to create a summary table.
+
+**Create a numeric predictor matrix**.  Use the `dummyVars()` function (making sure to include `fullRank = T`).   The resulting matrix should be 1470 x 57.
+
+```{r}
+# Use dummyVars() function along with predict() to make
+# the numeric predictor matrix
+
+num_frame <- dummyVars(attrition ~., 
+                       fullRank=T, 
+                       data = bi) %>% 
+  predict(newdata = bi)
+
+# Check dimensions of predictor matrix
+dim(num_frame)
+
+```
+
+**Remove near zero variance predictors from the numeric predictor matrix**. The resulting matrix should be 1470 x 54.
+
+```{r}
+# Remove near zero variance predictors using nzv() function
+num_frame <- num_frame[,-nzv(num_frame)]
+ 
+# Check dimension of predictor matrix 
+dim(num_frame)
+```
+
+**Impute missing values with medians**.  It makes sense to impute at this point since we cannot create a correlation matrix when there are missings.
+
+```{r}
+# How many complete cases?
+na.omit(num_frame) %>% 
+  nrow
+
+# Impute with medians using preProcess() function together
+# with predict()
+num_frame <- preProcess(num_frame, "medianImpute") %>% 
+  predict(num_frame)
+
+# Check that it worked.  This should equal the number of
+# rows in the dataset.
+na.omit(num_frame) %>% 
+  nrow
+```
+
+**Remove correlated predictors**.  Are there any? Yes. The final predictor matrix should be 1470 x 52.
+
+```{r}
+# Check for highly correlated variables using cor(), which 
+# produces a numeric correlation matrix, and findCorrelation().
+num_frame %>% 
+  cor() %>% 
+  findCorrelation(cutoff = .75, names = T) # 2 correlated
+
+# Remove the correlated variables over an arbitrary threshold.
+num_frame <- num_frame[, -findCorrelation(cor(num_frame), cutoff = .75)]
+
+# Check to make sure there are no other highly correlated predictors.
+num_frame %>% 
+  cor() %>% 
+  findCorrelation(cutoff = .75) 
+
+# Check the dimensions of the resulting predictor matrix.
+dim(num_frame)
+```
+
+## Questions
+
+## Q1
+
+```{r}
+
+# Overall attrition rate is .16122
+bi %>% 
+  mutate(
+    attrition = factor(attrition),
+  ) %>% 
+  summarize(
+    attritionRate = mean(attrition=="Yes")
+  )
+
+# Attrition by department
+bi %>% 
+  mutate(
+    attrition = factor(attrition),
+    department = factor(department),
+    job_role = factor(job_role)
+  ) %>% 
+  na.omit() %>% 
+  group_by(department, job_role) %>% 
+  summarize(
+    attritionRate = mean(attrition=="Yes")
+  ) %>% 
+  arrange(desc(attritionRate))
+
+bi %>% 
+  mutate(
+    attrition = factor(attrition),
+    department = factor(department),
+  ) %>% 
+  na.omit() %>% 
+  group_by(department) %>% 
+  summarize(
+    attritionRate = mean(attrition=="Yes")
+  ) %>% 
+  arrange(desc(attritionRate))
+
+  
+```
+
+## Q2
+
+Fit a logistic regression model using the predictor matrix you created above (consisting of dummy variables only).
+
+1. Report in-sample accuracy for this model with a decision threshold of .5.  (Accuracy is defined as the proportion of correct predictions.)
+2. Report estimated out-of-sample accuracy.  It will be easiest to get this from caret, using the train() function with method = "glm." The information caret prints to the screen, remember, is the cross-validation estimate of the model's out-of-sample performance.
+3. Comment on whether the model offers an improvement over predicting with the majority class.
+
+Notes on using caret.  The train function has the following basic arguments:
+- x: the numeric predictor matrix (num_frame).
+- y: the binary outcome variable consisting in labels (bi$attrition).
+- method: "glm."
+- data: not needed, because x and y already contain the data.
+- preProcess: c("center","scale").  Adding this argument will allow you to easily compare the resulting coefficients for effect size.
+
+The upside of standardizing inputs (centering and scaling) is that it allows you to compare coefficient effect sizes easily---they are all on the same scale. The downside is that they are no longer scaled in the original units, and interpretation changes.
+
+Note that caret will use the factor levels in the outcome variable to decide which level is being modeled.  If the levels are `STAY, LEAVE` then the variable in the second position, LEAVE, will be modeled.
+
+```{r}
+# glm model 
+set.seed(123)
+
+# model_q2 <- train(
+#   factor(attritionYes) ~ .,
+#   method="glm",
+#   data= num_frame,
+#   preProcess=c("center","scale")
+#   )
+# set.seed(123)
+
+# Check modeling order
+levels(factor(bi$attrition))
+
+model_q2 <- train(
+  x=num_frame,
+  y=bi$attrition,
+  method = "glm",
+  preProcess=c("center","scale")
+)
+
+# In-sample performance at .5 threshold is 0.8979592
+pred_q2 <- as.data.frame(num_frame)
+pred_q2$prediction = predict(model_q2, type = "prob", newdata = pred_q2)
+pred_q2 <- pred_q2 %>% 
+  mutate(
+    point5 = ifelse(pred_q2$prediction[1]>.5,1,0)
+  )
+pred_q2$point5 %>% mean()
+
+# Baseline performance of 0.8387755
+predict(model_q2, type = "prob")$No %>% mean()
+
+# Out-of-sample performance of 0.860681
+model_q2$results
+
+# AUC of 0.8788
+roc(bi$attrition, predict(model_q2, type = "prob")$Yes)
+
+
+```
+
+> Answer: <br /><br />
+Baseline performance of 0.8387755<br />
+Out-of-sample performance of 0.860681<br />
+In-sample performance at .5 threshold of 0.8979592<br />
+AUC of 0.8788 <br />
+This model is better than baseline performance if we're simply choosing the majority class. <br />
+
+## Q3
+
+Which of the centered and scaled predictors has the largest impact on attrition? That is, which of the coefficients has the biggest effect size? 
+
+Remember:  To answer this question you must compare the absolute value of the coefficients.  (We will ignore for now the fact that the coefficients are expressed in log odds, since they are still comparable on a relative basis regardless of the units.)
+
+Note: the varImp() function in caret (whose single argument is the model object) is another method for assessing variable impact.  The results you get using it should confirm your answer to the above question.
+
+Since you are working with standardized coefficients, the interpretation will be: a 1 unit (that is, after scaling, a 1 standard deviation) increase in x is associated with a coefficient-sized change in the log odds of y, on average, while holding the other predictors constant.
+
+```{r}
+
+# sorted list of coefficients
+coefs <- as.data.frame(stack(coef(model_q2$finalModel)))
+coefs %>% 
+  arrange(desc(abs(values))) %>% 
+  head
+
+# variable importance
+varImp(model_q2)
+
+
+```
+
+> Answer: Overtime has the largest impact on attrition
+
+## Q4
+
+Using the predictor you identified in Q3 (the coefficient with the biggest effect size), create a visualization that illustrates its relationship to the target variable. (Remember that a visualization is an illustration of a result; it does not have to be the result itself.) 
+
+Interpret your plot.
+
+```{r}
+
+bi %>% 
+  filter(!is.na(over_time)) %>% 
+  ggplot(aes(over_time, attrition)) + 
+  geom_count() + 
+  labs(
+    title="Overtime ~ Attritionm",
+    x="Over Time", 
+    y="Attrition"
+  )
+
+num_frame_no_overtime <- as.data.frame(num_frame) %>% 
+  mutate(
+    over_timeYes = 0
+  )
+
+
+# In-sample estimation of  for noone having over time
+num_frame_no_overtime$prediction = predict(model_q2, type = "prob", newdata = num_frame_no_overtime)
+num_frame_no_overtime <- num_frame_no_overtime %>% 
+  mutate(
+    point5 = ifelse(num_frame_no_overtime$prediction[1]>.5,1,0)
+  )
+
+
+g_no_overtime <- num_frame_no_overtime$point5 %>% mean()
+g_overtime <- pred_q2$point5 %>% mean()
+viz <- as.data.frame(c(g_no_overtime, g_overtime))
+viz$names <- c("Overtime", "No Overtime")
+viz$`c(g_no_overtime, g_overtime)`
+rename(viz, Rate = `c(g_no_overtime, g_overtime)`)
+ggplot(viz, aes(names, `c(g_no_overtime, g_overtime)`)) + 
+  geom_col() + 
+  labs(
+    title="Change in attrition without overtime",
+    x="",
+    y="Percent attrition"
+  )
+
+```
+
+> Answer: 
+
+## Q5
+
+What should Angelica say in the phase 1 report? Please include quantitative details from your answers to the questions above.
+
+
+
+Who is leaving?
+What is the company-wide attrition rate and how does that vary by department and position?
+What is the cost currently to BI associated with employee attrition?
+Are there changes that the company could make to retain employees?
+What is the return on investment (ROI) for those changes?
+
+
+
+> Answer: 
+Your company currently has about a 16% attrition rate. The Sales department overall has an attrition rate of 22%. The top 3 positions with the highest attrition are: <br />
+1) Sales Representative (47%)<br />
+2) Laboratory Technician (24%)<br />
+3)Sales Executive (17%)<br /><br />
+Assuming attrition is about 20% of an employees yearly salary, this equates to $1,225,020 in the Sales department alone and $2,601,665 company-wide. <br /><br />
+When looking at who is leaving, these employees have a higher rate of overtime than the employees who stay. According to a GLM model with 86% out of sample accuracy, by eliminating over time company wide, attrition would be reduced by ~10%. This would equate to $1970695 in savings, again assuming 2.4 months pay is lost for each employee leaving. 
+
+
+
+```{r}
+# find lost wages for sales department who leave
+bi %>% 
+  filter(
+    department=="Sales",
+    !is.na(monthly_income)
+  ) %>% 
+  group_by(attrition) %>% 
+  summarize(
+    lost_income = sum(monthly_income*2.4)
+  )
+
+# find lost wages company wide who leave
+bi %>% 
+  filter(
+    !is.na(monthly_income)
+  ) %>% 
+  group_by(attrition) %>% 
+  summarize(
+    lost_income = sum(monthly_income*2.4)
+  )
+  
+# use no overtime prediction from previous question to predict lost wages
+num_frame_no_overtime %>% 
+group_by(point5) %>% 
+  summarize(
+    lost_income = sum(monthly_income*2.4)
+  )
+```
+
+
+0.47619048
+Research & Development	Laboratory Technician	0.23943662
+Sales	Sales Executive	0.17441860
+Research & Development	Research Scientist	0.10000000
+Sales	Manager	0.10000000

@@ -1,0 +1,353 @@
+---
+title: "IS 6489: Module 7 | Airbnb"
+author: "Meag Tessmann"
+date: "Nov 4-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load data and packages
+
+```{r}
+library(tidyverse)
+library(caret)
+
+a <- read_csv("airbnb.csv")
+
+glimpse(a)
+
+summary(a)
+```
+
+
+
+## Data Preparation
+
+
+```{r}
+# Grain
+length(unique(a$id))==nrow(a) # yes
+
+# Prepare data
+a <- a %>% 
+  dplyr::select(-id, -name, -summary) %>% 
+  mutate(host_response_time = factor(host_response_time),
+         neighbourhood_cleansed = factor(neighbourhood_cleansed),
+         property_type = factor(property_type),
+         room_type = factor(room_type),
+         bed_type = factor(bed_type),
+         cancellation_policy = factor(cancellation_policy),
+         cleaning_fee = replace_na(cleaning_fee, 0))
+
+# Summarize new dataset
+summary(a)
+```
+
+
+```{r}
+# Look more closely at neighbourhood_cleansed
+a %>% 
+  count(neighbourhood_cleansed) %>% 
+  mutate(cum_count = seq(1, length(neighbourhood_cleansed)))
+# 35 neighborhoods
+
+# Look more closely at property_type
+a %>% 
+  count(property_type) 
+
+# Look more closely at room_type
+a %>% 
+  count(room_type) 
+
+# Look more closely at bed_type
+a %>% 
+  count(bed_type) 
+
+# Look more closely at cancellation policy
+a %>% 
+  count(cancellation_policy) 
+
+
+```
+
+
+```{r}
+
+a <- a %>% 
+  mutate(host_response_time = na_if(host_response_time, "N/A"),
+         host_response_time = factor(host_response_time))
+
+```
+
+
+```{r}
+
+na.omit(a) %>% 
+  nrow # or
+
+complete.cases(a) %>%  
+  sum
+
+```
+
+
+**Create a numeric predictor matrix**.  
+```{r}
+
+preds <- dummyVars(annual_bookings ~., data = a, fullRank = T) %>% 
+  predict(newdata = a)
+
+dim(preds)
+
+```
+
+**Remove near zero variance predictors from the numeric predictor matrix**. 
+
+```{r}
+
+preds <- preds[, -nzv(preds)]
+
+dim(preds)
+
+```
+
+**For convenience, add the outcome variable to the dummy variable matrix**. 
+
+
+```{r}
+preds <- data.frame(preds)
+
+preds$annual_bookings <- a$annual_bookings
+
+dim(preds)
+```
+
+
+
+## Questions
+
+
+## Q1
+
+
+```{r}
+
+
+a %>% 
+  ggplot(aes(annual_bookings)) +
+  geom_histogram(binwidth = 5) + 
+  ggtitle("Histogram of Annual Bookings")
+
+
+a %>% 
+  summarize(
+    n = NROW(annual_bookings),
+    q1 = quantile(annual_bookings, .25),
+    median = median(annual_bookings),
+    q3 = quantile(annual_bookings, .75),
+    sd = sd(annual_bookings),
+    mean = mean(annual_bookings)
+  )
+
+```
+
+> *Answer*<br />
+> Annual bookings is right skewed and does not appear normal. The mean is almost half of a standard deviation higher than the median. The histogram shape is suggestive that taking the log of annual bookings might be useful. 
+
+## Q2
+
+
+```{r}
+set.seed(123)
+
+model_q2 <- train(y = preds$annual_bookings,x = select(preds, -annual_bookings),  preProcess=c("medianImpute", "center", "scale"), method="lm")
+
+est_q2 <- preds %>% 
+  dplyr::select(annual_bookings) %>% 
+  mutate(
+    est_annual_bookings = predict(model_q2, newdata = preds),
+    priceDiff = annual_bookings - est_annual_bookings,
+  )
+
+summary_q2 <- est_q2 %>% 
+  summarize(
+    MAE = MAE(annual_bookings, est_annual_bookings),
+    RMSE = RMSE(annual_bookings, est_annual_bookings),
+    R2 = R2(annual_bookings, est_annual_bookings),
+  )
+
+summary_q2
+summary(model_q2)
+(model_q2$results)  
+
+
+error_high <- median(preds$annual_bookings) + summary_q2$RMSE
+error_low <- median(preds$annual_bookings) - summary_q2$RMSE
+(preds$annual_bookings < error_low) %>% 
+  mean()
+(preds$annual_bookings < error_high) %>% 
+  mean()
+
+
+```
+> *Answer* <br /><br />
+Estimated RSME: 50.01246<br />
+In-sample RSME: 49.02834<br /><br />
+I would say this model is not too performant. If we were predicting a median observation, the error range would be 0 to 81—a range which ~75% of the observations fall into. 
+
+## Q3
+
+
+```{r}
+set.seed(123)
+
+model_q3 <- train(
+  y = preds$annual_bookings,
+  x = select(preds, -annual_bookings),
+  preProcess=c("medianImpute", "center", "scale"), 
+  method="glmnet",
+  tuneGrid = expand.grid(
+    alpha = seq(0,.15,.05), #started with 0-1, and narrowed down to this range after experimentation
+    lambda = seq(1,15,.05)  # started with the linear RSME, 0 to 50, and narrowed with experimentation
+    )
+  )
+
+est_q3 <- preds %>% 
+  dplyr::select(annual_bookings) %>% 
+  mutate(
+    est_annual_bookings = predict(model_q3, newdata = preds),
+    priceDiff = annual_bookings - est_annual_bookings,
+  )
+
+summary_q3 <- est_q3 %>% 
+  summarize(
+    MAE = MAE(annual_bookings, est_annual_bookings),
+    RMSE = RMSE(annual_bookings, est_annual_bookings),
+    R2 = R2(annual_bookings, est_annual_bookings),
+  )
+
+summary_q3
+summary(model_q3)
+(model_q3$results)  
+
+
+plot(model_q3)
+plot(model_q3$finalModel)
+model_q3$finalModel$tuneValue
+coef(model_q3$finalModel, model_q3$finalModel$tuneValue$lambda)
+
+
+```
+> *Answer* <br /><br />
+The linear and glmnet models are very similar in performance. As seen below, their in-sample and estimated RSME and R2 values are pretty much the same. In fact, we can see that the glmnet found a Ridge model (alpha==0) to be most performant and indeed from the graph in the next question, we can see the coefficients were hardly altered at all compared to the linear model, implying an almost linear model resulting from the glmnet training was most performant. It might be useful to use the glmnet model for coefficient comparison and a uncentered and unscaled linear model for interpretation.<br /><Br />
+Linear Model<br />
+In-sample RSME: 49.02834<br />
+In-sample R2: 0.3083615<br />
+Estimated RSME: 50.01246<br />
+Estimated R2: 0.2793378<br />
+<br /><br />
+Regularization model<br />
+In-sample RSME: 49.10431	<br />
+In-sample R2: 0.3069973<br />
+Estimated RSME: 49.93684<br />
+Estimated R2: 0.2797758<br />
+
+
+## Q4
+
+
+```{r}
+
+compare <- data.frame(variables = rep(as.character(names(coef(model_q2$finalModel))),2))
+compare$method <- c(rep("ridge", 35), rep("lm", 35))
+compare$coefs <- c(as.numeric(as.character(coef(model_q3$finalModel, model_q3$bestTune$lambda))),
+                   as.numeric(as.character(coef(model_q2$finalModel))))
+
+ggplot(compare, aes(variables, coefs, group=method, fill=method)) + 
+  geom_bar(stat = "identity",position="dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+
+```
+
+> *Answer* <br /><Br />
+The models are quite similar, with some slight variation - the linear model weights Condominium higher and the glmnet model has a great negative coefficient for hosts' response within an hour. The simliar weightings alongside similar performance metrics gives me confidence in my final suggestion of the coefficients that are weighted heavier. <br /><br />
+From an interpretative view, I'm surprised rating has such a low coefficient, I expected it to be higher. I also expected certain neighborhoods to have a heavier weighting, but the few listed seem to have relatively low coefficients. I found it amusing that bedrooms has a negative coefficient. I theorize this might be due to the majority of users looking for single accomodation where a large number of bedrooms is simply not needed.  
+
+
+## Q5
+
+
+```{r}
+
+# make a ordered graph, filtered to the highest coefficients
+compare <- data.frame(variables = rep(as.character(names(coef(model_q2$finalModel))),2))
+compare$method <- c(rep("ridge", 35), rep("lm", 35))
+compare$coefs <- c(as.numeric(as.character(coef(model_q3$finalModel, model_q3$bestTune$lambda))),
+                   as.numeric(as.character(coef(model_q2$finalModel))))
+
+compare <- compare %>% filter(variables!="(Intercept)") %>% filter( abs(coefs)>3)
+
+ggplot(compare, aes(reorder(variables, coefs), coefs, group=method, fill=method)) + 
+  geom_bar(stat = "identity",position="dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+compare
+
+# checking avg bookings for different response times
+a %>% 
+  filter(host_response_time=="within an hour") %>% 
+  summarize(
+    mean = mean(annual_bookings)
+  ) #70.27644	
+
+a %>% 
+  filter(host_response_time=="within a day") %>% 
+  summarize(
+    mean = mean(annual_bookings)
+  ) #21.28814	
+
+# checking avg bookings for superhost
+a %>% 
+  filter(host_is_superhost==TRUE) %>% 
+  summarize(
+    mean = mean(annual_bookings)
+  ) 	# 69.07916	
+
+a %>% 
+  filter(host_is_superhost==FALSE) %>% 
+  summarize(
+    mean = mean(annual_bookings)
+  ) #39.70359	
+
+# what percent of bookings are under the median + error rate
+(a$annual_bookings < (53.7679752+50)) %>% mean()
+(a$annual_bookings < (53.7679752-50)) %>% mean()
+
+# See if there's specific bed types to recommend, using as a proxy for additional beds
+ggplot(a, aes(bed_type, annual_bookings)) + 
+  geom_boxplot()
+
+# linear model without centering or scaling for interpretation
+model_q5 <- train(y = preds$annual_bookings,x = select(preds, -annual_bookings),  preProcess=c("medianImpute"), method="lm")
+
+summary(model_q5)
+
+a$cleaning_fee %>% mean()
+95.733 * -0.137201 # average claening fee * cleaning fee coefficient
+
+```
+
+>*Answer*<br /><Br />
+Using the data provided, I used both linear regression as well as a ridge method to determine the variables which are correlated with a host's annual booking rate. There was a relatively high error rate with both models - about 50 bookings - and the data supplied only explain about 30% of the variation in annual bookings. If all of the variables were average for a host, the error range is roughly 4 to 104, which account for ~71% of the observations. Keep this uncertainty in mind when I provide tangible number of increases or decreases in bookings. Despite this uncertainty, there are still some significant factors which hosts can improve on in hopes of increasing their annual bookings. I will not cover the variables which the host cannot easily alter withuot a large investment, such as neightborhood or property type. I will instead focus on 6 actionable items which are in their power. <br /><Br />
+A cleaning fee has one of the largest impacts on annual booking rate. I suggest hosts examine if they can reduce their cleaning fee or if they can increase their nightly rates to accomadate the cleaning fee in it's entirety, since price has a smaller impact on annual bookings than cleaning fee does. I theorize a guest is taken back by high cleaning fees which they don't see until the final booking page. The surprise of seeing an additional cleaning fee which they may not have initially anticipated might be detering them from booking. Alternatively, this is an opportunity our product team has to experiment with bringing forward in the pipeline. Removing the average cleaning fee of $95 can expect about 13 more bookings per year.<Br /><Br />
+Secondly, I suggest the host works towards becoming a superhost. On average, superhosts have 30 more bookings than non-superhosts. The badge helps remove doubt from reluctant guests. As you know, host efforts might include using Airbnb more to reach 100 booked nights, maintaining a 90% response rate, trying very hard not to cancel, and providing an overall good experience which might result in a high rating. <br /><br/>
+Response time is one of the most actionable factors within a host's control. Hosts who respond within an hour have 3.3 times more annual bookings than hosts who respond within the day. It's unclear if this is due to more dedicated hosts or guests booking with higher frequency when responded to faster. <Br /><Br />
+Hosts can turn on instant booking to help increase annual bookings. This might be due to the immediate assurance and possible lack of stereotyping felt by a booker. Hosts who turn on instant booking can expect about 10 more bookings per year.<Br /><Br />
+When looking at their cancellation policy, hosts should consider the moderate policy, which is a good balance between some protection for them while providing a level of assurance for the booker for unforeseen events. Changing from the most common policy, strict 14 days with grace period, to a moderate policy can expect 14-15 additional bookings per year.  <br/><br/>
+Lastly, while bedrooms did not have too much of a correlation, posiblly due to the number of bookings for a single person, the amount of beds does have a positive correlation on annual bookings. A couch or pull out sofa are appealing options that will open the possibilty to larger booking parties while still maintaining the same number of bedrooms.
+

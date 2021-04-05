@@ -1,0 +1,444 @@
+---
+title: "IS 6489: Module 8 | BioImplants, Phase 2"
+author: "Meag Tessmann"
+date: "Nov 21 - Dec 1"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load data and packages
+
+```{r}
+library(tidyverse)
+library(caret)
+library(scales) #moneys labels
+library(cluster)    # clustering algorithms
+library(factoextra) # clustering algorithms & visualization
+
+
+# Employee churn data
+bi1 <- read_csv("bioimplants.csv")
+
+# Employee productivity data
+bi2 <- read_csv("additional_bioimplants.csv")
+
+```
+
+## Description of Data
+
+- *age*:   age of employee in years.	
+- *business_travel*: amount of job-related employee travel.            
+- *department*:  department at the company in which the employee works.
+- *distance_from_home*: travel distance to workplace from  employee's home, in miles.
+- *education*:  employee's level of education.
+- *education_field*:  disciplinary area of employee's education.
+- *environment_satisfaction*: employee's satisfaction with the work environment.
+- *gender*: Male/Female                     
+- *job_involvement*:  employee's self-reported level of psychological and emotional  participation in work, profession, and company.
+- *job_level*: the level of responsibility associated with the position, from entry level,  intermediate level, first-level management, middle-level management to top-level management (chiefs). 
+- *job_role*: type of position at the company.
+- *job_satisfaction*: self-reported job satisfaction.
+- *marital_status*: Single, Married, Divorced.
+- *monthly_income*: salary per month in $.          
+- *num_companies_worked*: number of companies at which the employee has previously worked.
+- *over_time*:  indicator variable for whether the employee has worked more than 40 hours per week.   
+- *percent_salary_hike*: the percentage increase in  employee's salary in 2016 from 2015.     
+- *performance_rating*:  supervisor's assessment of employee's performance.
+- *relationship_satisfaction*:  employee's self-reported level of  satisfaction with relationships at work.
+- *stock_option_level*:  indicator for the relative value of the stock options available to the employee.
+- *total_working_years*: employee's total number of years in the workforce.
+- *training_times_last_year*:  number of trainings attended by employee in 2016.
+- *work_life_balance*: employee's self-reported work-life balance in current role at the company.     
+- *years_at_company*:  number of years the employee has worked at the company.
+- *years_in_current_role*: number of years the employee has worked at the company in current role.     
+- *years_since_last_promotion*: number of years since the employee's last promotion.
+- *years_with_curr_manager*:  number of years the employee has worked at the company with current supervisor.  
+- *attrition*: indicator for whether the employee left the company in 2016.
+- *employee_number*: employee ID number.
+- *monthly rate*: employee monthly revenue production.
+
+## Data Preparation
+
+```{r}
+# Join datasets
+
+bi <- bi1 %>% 
+  left_join(bi2, by = "employee_number")
+
+# Use dummyVars() function along with predict() to make
+# the numeric predictor matrix
+
+num_frame <- dummyVars(attrition ~., 
+                       fullRank=T, 
+                       data = bi) %>% 
+  predict(newdata = bi)
+
+# Remove near zero variance predictors using nzv() function
+num_frame <- num_frame[,-nzv(num_frame)]
+ 
+# Impute with medians using preProcess() function together
+# with predict()
+num_frame <- preProcess(num_frame, "medianImpute") %>% 
+  predict(num_frame)
+
+# Remove the correlated variables over an arbitrary threshold.
+num_frame <- num_frame[, -findCorrelation(cor(num_frame), cutoff = .75)]
+
+# Make num_frame into a dat.frame
+num_frame <- data.frame(num_frame)
+
+# Look at variables and dimesnions of the dataset
+glimpse(num_frame)
+
+```
+
+
+# Questions
+
+## Q1: Estimate the current cost of attrition
+
+```{r}
+separation <- 500
+acquisition <- 4900
+placement <- 3500
+workdays_per_year <- 240
+workdays_per_month <- workdays_per_year / 12
+workdays_position_open <- 40
+workdays_during_onboarding <- 60
+onboarding_efficiency <- .5 
+
+direct_costs = separation+acquisition+placement
+
+# Add attrition cost column to each employee row
+bi <- bi %>% 
+  mutate(
+    attrition_cost = 
+      (direct_costs - 
+      (monthly_income / workdays_per_month*workdays_position_open) + 
+      (bi$monthly_rate / workdays_per_month *
+        (workdays_position_open+
+        (workdays_during_onboarding * onboarding_efficiency)
+        )
+      ))
+  )
+   
+
+# Calculate Average attrition - $45,636.18
+mean(bi$attrition_cost, na.rm=TRUE)
+
+# Check spread
+bi %>% 
+  filter(!is.na(attrition_cost)) %>% 
+  summarize(
+    q1 = quantile(attrition_cost, .25),
+    q2 = quantile(attrition_cost, .5),
+    mean = mean(attrition_cost),
+    q3 = quantile(attrition_cost, .75),
+    sd = sd(attrition_cost),
+  )
+  
+  
+  
+```
+
+> *Answer:* <br />
+> Current average cost of attrition: $45,636.18
+
+## Q2: Fit and use a model of churn
+
+1. **Report average probability of churn for the baseline case.** 
+2. **Report average probability of churn if there was no overtime.**
+
+```{r}
+
+# Logistic regression model  
+set.seed(123)
+
+# Remember: remove employee_number and monthly_rate.
+num_frame_overtime <- num_frame %>% 
+  select(-employee_number, -monthly_rate) 
+
+# Train model
+model_q2 <- train(
+  x=num_frame_overtime,
+  y=factor(bi$attrition),
+  method = "glm",
+  preProcess=c("center","scale")
+)
+
+# Probability of churn for overtime matrix: 0.1612245
+pred_q2 <- as.data.frame(num_frame)
+pred_q2$prediction_overtime = predict(model_q2, type = "prob", newdata = pred_q2)$Yes
+mean(pred_q2$prediction_overtime, na.rm=TRUE)
+
+# # Probability of churn for no overtime matrix: 0.103227
+pred_q2$prediction_noOvertime = predict(model_q2, type = "prob", newdata = pred_q2 %>% mutate(over_timeYes=0))$Yes
+mean(pred_q2$prediction_noOvertime, na.rm=TRUE)
+
+# Check prediction var
+summary(pred_q2$prediction_noOvertime)
+summary(pred_q2$prediction_overtime)
+
+```
+
+> *Answer:* <br /><br />
+> 1. Average probability of churn for the baseline case: 0.1612245<br/>
+> 2. Average probability of churn if there was no overtime: 0.103227<br/>
+
+
+## Q3: Calculate expected savings
+
+```{r}
+
+# To get you started:
+ev <- data.frame(id = bi$employee_number,
+                 attrition_cost = bi$attrition_cost,
+                 cost_baseline = 0,
+                 cost_new_policy =  .1 * bi$attrition_cost,
+                 pLeave = pred_q2$prediction_overtime,
+                 pLeave_noOvertime = pred_q2$prediction_noOvertime,
+                 department = bi$department
+                 )
+
+# Add columns for expected cost for both overtime and no overtime policies, additionally expected savings column
+ev <- ev %>% 
+  mutate(
+    expectedCost_overtime = pLeave*(attrition_cost+cost_baseline) + (1-pLeave)*cost_baseline,
+    expectedCost_noOvertime = pLeave*(attrition_cost+cost_new_policy) + (1-pLeave)*cost_new_policy,
+    expectedSavings = expectedCost_overtime - expectedCost_noOvertime
+  )
+
+# average cost of switching is $1,196.14
+# total cost of switching is $1,672,197
+ev %>% 
+  filter(
+    !is.na(expectedSavings)
+  ) %>% 
+  group_by(department) %>% 
+  summarize(
+    totalSavings = sum(expectedSavings),
+    avgSavings = mean(expectedSavings),
+    avgOvertime = mean(expectedCost_overtime),
+    avgNoOvertime = mean(expectedCost_noOvertime),
+    maxSavings = max(expectedSavings)
+  )
+head(ev)
+
+```
+
+> *Answer:*<br /><br />
+> Total Cost with a no overtime policy: $1,672,197	<br />
+> Average Cost per position with a no overtime policy: $1,196.14<br /><br />
+> There seems to be an overall cost instead of savings for switching to a no overtime policy.
+
+## Q4: Plot profit curve
+
+**Comment on approximately many customers should be included in the no overtime policy.**
+
+```{r}
+
+ev_rank <- ev %>% 
+  na.omit() %>% 
+  arrange(desc(expectedSavings)) %>% 
+  mutate(
+    rank = dense_rank(desc(expectedSavings)),
+    cumSum = cumsum(expectedSavings)
+  ) 
+ev_rank %>% 
+  ggplot(aes(rank, cumSum)) + 
+  geom_line() + 
+  scale_y_continuous(labels=dollar)
+
+
+  
+```
+
+> Answer: <br /><br/>
+> About 50 employees have a positive expected savings. Of those 50, 8 currently are working overtime (calculated in question 5).
+
+## Q5: Recommend
+
+What should Angelica say in the phase 2 report? Please include details from the questions above (as well as from any additional analytics you might have done).
+
+
+```{r}
+
+# 5.3% of HR, 3.9% of R&D, 1.2% of Sales would generate savings based on new policy
+ev <- ev %>% 
+  mutate(
+    changePolicy = ifelse(expectedSavings>0, 1, 0)
+  ) 
+ev %>% 
+  filter(!is.na(expectedSavings)) %>% 
+  group_by(department) %>% 
+  summarize(
+    mean(changePolicy)
+  )
+
+
+# Monthly rate and monthly income have high coefficients when predicting for a positive expected savings after a change in policy
+colnames(ev)[1] <- "employee_number"
+  
+num_frame_q5 <- merge(ev, num_frame, by="employee_number")
+num_frame_q5 <- num_frame_q5 %>% 
+  select(-expectedCost_noOvertime, -expectedCost_overtime, -expectedSavings, -cost_new_policy, -cost_baseline, -attrition_cost) %>%
+  mutate(
+    changePolicy = factor(ifelse(is.na(changePolicy), 0,changePolicy))
+  )
+
+num_frame_q5 <- preProcess(num_frame_q5, "medianImpute") %>% 
+  predict(num_frame_q5)
+mean(is.na(num_frame_q5$changePolicy))
+
+set.seed(123)
+model_q5 <- train(
+    changePolicy~., data=num_frame_q5,
+    method = "glmnet",
+    preProcess=c("center","scale"),
+    na.action=na.exclude
+)
+
+# make a ordered graph, filtered to the highest coefficients
+compare <- data.frame(variables = c("(Intercept)",model_q5$coefnames ))
+compare$coefs <- c(as.numeric(as.character(coef(model_q5$finalModel, model_q5$bestTune$lambda))))
+compare <- compare %>% filter(variables!="(Intercept)")
+# Plot variables with highest coefficients
+compare %>% 
+  filter(abs(coefs)>.05) %>% 
+  ggplot(aes(reorder(variables, coefs), coefs)) +
+  geom_bar(stat = "identity",position="dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# num_frame_kClust <- preProcess(num_frame_q5, c("center", "scale")) %>%  predict(num_frame_q5)
+
+# Plot expected savings agaisnt highest coefficient variables
+bi_plot <- merge(bi, ev %>% select(employee_number, expectedSavings), by="employee_number")
+
+ggplot(bi_plot, aes(monthly_rate, expectedSavings)) + 
+  geom_point()
+
+ggplot(bi_plot, aes(monthly_income, expectedSavings)) + 
+  geom_point()
+
+
+  
+# Partition data on monthly income > 10000 - there really isn't any other variables that could separate those in this subset.
+  
+num_frame_over10000 <- num_frame_q5 %>% 
+  filter(monthly_income>10000, monthly_rate<10000)
+
+
+set.seed(123)
+model_over10000 <- train(
+    changePolicy~., data=num_frame_over10000,
+    method = "glmnet",
+    preProcess=c("center","scale"),
+    na.action=na.exclude
+)
+
+# make a ordered graph, filtered to the highest coefficients
+compare_over10000 <- data.frame(variables = c("(Intercept)",model_over10000$coefnames ))
+compare_over10000$coefs <- c(as.numeric(as.character(coef(model_over10000$finalModel, model_over10000$bestTune$lambda))))
+compare_over10000 <- compare_over10000 %>% filter(variables!="(Intercept)")
+# Plot variables with highest coefficients
+compare_over10000 %>% 
+  filter(abs(coefs)>.05) %>% 
+  ggplot(aes(reorder(variables, coefs), coefs)) +
+  geom_bar(stat = "identity",position="dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+# Save money on 80% of employees by eliminating overtime - saving on average $245.8 per employee, 
+bi_plot <- bi_plot %>% 
+  mutate(
+    over_time = factor(over_time)
+  )
+bi_plot %>% 
+  filter(monthly_income>10000, monthly_rate<10000, education=="College", over_time=="Yes") %>% 
+  summarize(
+    mean_savings = mean(expectedSavings),
+    count_savings = mean(expectedSavings>0),
+  )
+
+
+
+
+
+# check for those who already have overtime
+
+num_frame_overtime <- num_frame_q5 %>% 
+  filter(over_timeYes==1)
+
+
+set.seed(123)
+model_overtime <- train(
+    changePolicy~., data=num_frame_overtime,
+    method = "glmnet",
+    preProcess=c("center","scale"),
+    na.action=na.exclude
+)
+
+# make a ordered graph, filtered to the highest coefficients
+compare_overtime <- data.frame(variables = c("(Intercept)",model_overtime$coefnames ))
+compare_overtime$coefs <- c(as.numeric(as.character(coef(model_overtime$finalModel, model_overtime$bestTune$lambda))))
+compare_overtime <- compare_overtime %>% filter(variables!="(Intercept)")
+# Plot variables with highest coefficients
+compare_overtime %>% 
+  filter(abs(coefs)>.05) %>% 
+  ggplot(aes(reorder(variables, coefs), coefs)) +
+  geom_bar(stat = "identity",position="dodge") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+bi_plot %>% 
+  filter(over_time=="Yes") %>% 
+  ggplot(aes(monthly_rate, expectedSavings)) + 
+  geom_point()
+
+ggplot(bi_plot, aes(monthly_income, expectedSavings)) + 
+  geom_point()
+
+
+# Lose money 
+bi_plot %>% 
+  filter(monthly_income>10000, monthly_rate<10000, gender=="Male", over_time=="Yes") %>% 
+  summarize(
+    mean_savings = mean(expectedSavings),
+    count_savings = mean(expectedSavings>0),
+  )
+
+bi_plot %>% 
+  filter(over_time=="Yes", !is.na(over_time)) %>% 
+  summarize(
+    mean_change = mean(expectedSavings)
+  )
+summary(bi_plot$over_time)
+
+# Find individual employees who would benefit from a change in policy
+employee_list <- bi_plot %>% 
+  filter(over_time=="Yes", expectedSavings>0)
+employee_list %>% 
+  summarize(
+    totalSavings = sum(expectedSavings),
+    count = NROW(expectedSavings)
+  )
+pred_q2 %>% 
+  filter(employee_number %in% employee_list$employee_number) %>% 
+  summarize(
+    mean_predNo = mean(prediction_noOvertime),
+    mean_predYes = mean(prediction_overtime)
+  )
+
+
+```
+
+
+
+> Answer: <br /><br />
+We looked at the cost associated with changing to a no overtime policy to help reduce employee churn. Taking into account direct costs (such as acquisition,) an employees monthly income, decreased onboarding efficiency, and average positions left open throughout the year, we calculated the average cost of losing an employee is $45,636.18. <br /><br />
+While average probability of churn reduces from 16% to 10% if overtime is eliminated, we can conclude this policy change would cost the company \$1,672,197  when taking into account lost productivity and acquisition costs based on role and current monthly incomes. This would translate to \$1,196.14 per employee. <br /><br />
+There are, however, a few employees that would benefit from a change in their individual overtime duties which would save the company an estimated $7,767.35 in preventing their departure. Their individual employee numbers are 124, 429, 531, 638, 661, 1005, 1167, 1608. Changing their overtime policy would result in a modest probability of churn reduction from 10% to 2%. 
+
+---
+- 

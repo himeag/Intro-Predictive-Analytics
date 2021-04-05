@@ -1,0 +1,274 @@
+---
+title: "IS 6489: Module 5 | PacDev"
+author: "Meag Tessmann"
+date: "Oct 28 - Nov 3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Load data and packages
+
+```{r}
+library(scales)
+library(tidyverse)
+
+
+d <- read_csv("LAHomes.csv")
+
+glimpse(d)
+
+summary(d)
+
+```
+
+Data dictionary:
+- city: name of city
+- type:  type of dwelling, SFR or Condo/Twh
+- bed:  number of bedrooms
+- bath: number of baths
+- garage: size of garage (number of cars)
+- sqft: size of dwelling
+- pool:  indicator for pool
+- spa: indicator for spa
+- price: sales price
+
+## Cleaning
+
+1. `spa`. 
+
+```{r}
+table(d$spa, useNA = "always") 
+```
+
+2. `pool`
+
+```{r}
+table(d$pool, useNA = "always")
+``` 
+
+3. `type`.
+
+```{r}
+table(d$type, useNA = "always")
+```
+
+4. `garage`. 
+
+```{r}
+table(d$garage, useNA = "always")
+```
+
+```{r}
+
+d <- d %>% 
+  dplyr::select(-spa) %>% 
+  mutate(pool = ifelse(is.na(pool), "N", "Y") %>% factor,
+        garage = ifelse(is.na(garage), "0", garage) %>% factor,
+        city = factor(city),
+        type = factor(type))
+
+
+glimpse(d)
+summary(d)
+```
+
+
+## Questions
+
+## Q1
+
+
+```{r}
+
+ggplot(d, aes(sqft, price)) +
+  geom_point() +
+  theme_minimal() +
+  stat_smooth(method="lm", se = F) +
+  labs(title = "price ~ sqft") +
+  scale_y_continuous(label=dollar) 
+
+  
+
+```
+
+
+```{r}
+
+ggplot(d, aes(sqft, price)) +
+  geom_point() +
+  theme_minimal() +
+  facet_wrap(~city) +
+  stat_smooth(method="lm", se = F) +
+  labs(title = "price ~ sqft, varying by city") + 
+  scale_y_continuous(label=dollar) 
+
+
+```
+
+
+```{r}
+
+ggplot(d, aes(sqft, log(price))) +
+  geom_point() +
+  theme_minimal() +
+  stat_smooth(method="lm", se = F) +
+  labs(title = "log(price) ~ sqft")
+
+```
+
+
+```{r}
+
+
+ggplot(d, aes(log(sqft), log(price))) +
+  geom_point() +
+  theme_minimal() +
+  stat_smooth(method="lm", se = F) +
+  labs(title = "log(price) ~ log(sqft)")
+
+```
+
+> *Answer*<br/><br/>
+>This log-log model appears to fit the data better than the previous plots. The data appears to be more linear, without a parabolic shape veering away from the regression line. The data appears to have a more even spread as well, though still exhibits skewing. 
+
+
+## Q2
+
+```{r}
+
+model_1 <- lm(log(price) ~ log(sqft), data=d)
+summary(model_1)
+
+model_1$coefficients[2]
+
+```
+
+> *Answer*<br/><br/>
+>Coefficient: 1.44158<br />
+>Each 1% increase in the predictor, log square feet, is associated with a 1.442% increase in the outcome, log price. 
+
+
+
+## Q3
+
+
+```{r}
+
+model_2 <- lm(price ~ sqft, data=d)
+
+model_3 <- lm(log(price) ~ log(sqft), data=d)
+
+summary(model_2)
+summary(model_3)
+
+# Create RMSE function
+rmse <- function(actual, fitted) sqrt(mean((actual - fitted)^2))
+
+# RMSE for non-log model
+rmse(d$price, fitted(model_2))
+
+# RMSE for log model
+rmse(d$price, exp(fitted(model_3)))
+
+```
+> *Answer*<br/><br/>
+> Non-Log Model: <br/>
+> - Multiple R-squared:  0.729<br/>
+> - Adjusted R-squared:  0.7288<br/>
+> - RSME: 1857904<br /><br />
+> Log Model: <br/>
+> - Multiple R-squared:  0.7738 # Higher<br/>
+> - Adjusted R-squared:  0.7736 # Higher<br/>
+> - RSME: 1788187 # Lower<br /><br />
+> The log-log model has both higher R-squared values and a lower RSME value. This emperically shows the log model is an improvement.  
+
+
+## Q4
+
+```{r}
+# Regression
+
+d_noBH <- d %>% 
+  filter(city != "Beverly Hills")
+
+model_4 <- lm(log(price) ~ log(sqft) * city, data=d_noBH)
+
+summary(model_4)
+
+```
+
+```{r}
+# Plot of interaction
+
+ggplot(d_noBH, aes(log(sqft), log(price), color=city)) +
+  geom_point()+
+  geom_smooth(method="lm", se=F)+
+  theme_minimal() + 
+  ggtitle("log(price) ~ log(sqft) * city")
+
+
+```
+
+> *Answer*<br/><br/>
+>The least square lines have slightly different slopes and have |t| values over 2 in the lm() model. This indicates city does have a significant interaction with log(sqft) (a>.01). It appears homes in Westwood appreciate at the lowest rate (smallest slope) as sqft increases while additional square footage in Long Beach will raise estimated house price at the fastest rate (largest slope). This is indicated in the model summary as well, with both Santa Monica's and Westwood's square foot interaction dummy variables having negative coefficients in reference to Long Beach's. 
+
+
+## Q5
+
+
+```{r}
+
+# Set reference variable to Westwood
+d_c <- d %>% 
+  mutate(
+    city = factor(city, levels=c("Westwood", "Santa Monica", "Long Beach", "Beverly Hills"))
+  ) 
+
+levels(d_c$city)
+
+model_5 <- lm(log(price) ~ log(sqft) * city, data=d_c)
+summary(model_5)
+
+# check % price increase per % square footage increase for Long Beach alone. 
+d_bh <- d %>% 
+  filter(city=="Beverly Hills") 
+d_lb <- d %>% 
+  filter(city=="Long Beach")  
+d_sm <- d %>% 
+  filter(city=="Santa Monica") 
+d_ww <- d %>% 
+  filter(city=="Westwood")
+
+model_bh <- lm(log(price) ~ log(sqft), data=d_bh)
+model_lb <- lm(log(price) ~ log(sqft), data=d_lb)
+model_sm <- lm(log(price) ~ log(sqft), data=d_sm)
+model_ww <- lm(log(price) ~ log(sqft), data=d_ww)
+
+rmse(d$price, exp(fitted(model_bh)))
+rmse(d$price, exp(fitted(model_lb)))
+rmse(d$price, exp(fitted(model_sm)))
+rmse(d$price, exp(fitted(model_ww)))
+
+summary(model_bh)
+summary(model_lb)
+summary(model_sm)
+summary(model_ww)
+
+
+```
+
+
+> *Answer* <br /><br />
+> As we continue to focus our efforts on increasing square footage before reselling houses, Long Beach provides some of the best opportunities of the four cities we operate in. While Long Beach has, on average, the lowest price per square foot of the four cities we work in, it has the largest percent increase in price per percent increase in square footage. Between Westwood, Santa Monica, and Long Beach, Westwood has the smallest increase in price for a given percent increase in square footage. Santa Monica has ~14% greater increase in price per percent increase in square feet compared to Westwood, and Long Beach has ~34% greater increase in price per percent increase in square feet compared to Westwood. <br/><br />
+> For every percent increase of square footage in Long Beach, we can expect on average a 1.19% increase in price, where Long Beach and Westwood have only a .99% and .84% increase, respectively.  <br/><br />
+> I do not include Beverly Hills because square footage is not a good predictor of price - the RMSE was double for a log-log model using square footage to predict price - 6471464 compared to 3688607, 3673140, 3625783 for Long Beach, Santa Monica, and Westwood respectively.
+
+
+
+
+
+
