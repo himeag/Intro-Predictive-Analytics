@@ -1,0 +1,68 @@
+"0",""
+"0","# create new object with all data"
+"0","d_full <- read_csv(""adviseinvest_clean.csv"")  %>%"
+"0","  mutate(purchased = factor(ifelse(product==0, ""no"",""yes"")),"
+"0","         answered = factor(ifelse(answered==0, ""no"",""yes"")),"
+"0","         female = factor(female),"
+"0","         job = factor(job),"
+"0","         rent = factor(rent),"
+"0","         own_res = factor(own_res),"
+"0","         new_car = factor(new_car),"
+"0","         mobile = factor(mobile)) %>%"
+"0","  select(-product)"
+"2","Parsed with column specification:
+cols(
+  answered = [32mcol_double()[39m,
+  income = [32mcol_double()[39m,
+  female = [32mcol_double()[39m,
+  age = [32mcol_double()[39m,
+  job = [32mcol_double()[39m,
+  num_dependents = [32mcol_double()[39m,
+  rent = [32mcol_double()[39m,
+  own_res = [32mcol_double()[39m,
+  new_car = [32mcol_double()[39m,
+  chk_acct = [32mcol_double()[39m,
+  sav_acct = [32mcol_double()[39m,
+  num_accts = [32mcol_double()[39m,
+  mobile = [32mcol_double()[39m,
+  product = [32mcol_double()[39m
+)
+"
+"0","# create new object, including answered variable"
+"0","d_ans <- read_csv(""adviseinvest_clean.csv"")  %>%"
+"0","  mutate(answered = factor(ifelse(answered==0, ""no"",""yes"")),"
+"0","         female = factor(female),"
+"0","         job = factor(job),"
+"0","         rent = factor(rent),"
+"0","         own_res = factor(own_res),"
+"0","         new_car = factor(new_car),"
+"0","         mobile = factor(mobile)) %>%"
+"0","  select(-product)"
+"2","Parsed with column specification:
+cols(
+  answered = [32mcol_double()[39m,
+  income = [32mcol_double()[39m,
+  female = [32mcol_double()[39m,
+  age = [32mcol_double()[39m,
+  job = [32mcol_double()[39m,
+  num_dependents = [32mcol_double()[39m,
+  rent = [32mcol_double()[39m,
+  own_res = [32mcol_double()[39m,
+  new_car = [32mcol_double()[39m,
+  chk_acct = [32mcol_double()[39m,
+  sav_acct = [32mcol_double()[39m,
+  num_accts = [32mcol_double()[39m,
+  mobile = [32mcol_double()[39m,
+  product = [32mcol_double()[39m
+)
+"
+"0","# create answer model for sales"
+"0","answer_model <- rpart(answered ~ ., data=d_ans)"
+"0",""
+"0","# is there a distinction for those who answer, varing by checking account?"
+"0","d_full %>%"
+"0","  mutate(p=predict(tree_model, type=""prob"")[,2]) %>%"
+"0","  ggplot(aes(answered, p)) + "
+"0","  geom_jitter()+ "
+"0","  facet_wrap(~chk_acct) + "
+"0","  labs(title=""Probability of purchasing, given answering and number of checking accounts"", x=""Call Answered"", y=""Probability of Purchasing"")"

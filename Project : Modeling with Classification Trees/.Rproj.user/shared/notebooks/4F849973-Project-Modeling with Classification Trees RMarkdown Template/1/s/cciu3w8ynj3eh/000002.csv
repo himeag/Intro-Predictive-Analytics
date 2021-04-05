@@ -1,0 +1,6 @@
+"0","# accuracy of model"
+"0","sum(predict(tree_model, type=""class"") == d$answered)/nrow(d)"
+"1","[1]"
+"1"," 0.8104"
+"1","
+"

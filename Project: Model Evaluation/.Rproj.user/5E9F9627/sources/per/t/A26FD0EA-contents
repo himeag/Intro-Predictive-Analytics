@@ -1,0 +1,219 @@
+---
+title: "Project-Model Evaluation and Deployment"
+author: "Meag Tessmann"
+date: "9/21/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(rpart)
+library(rpart.plot)
+library(magrittr)
+
+```
+
+## Load and Transform Data
+
+Here is a data dictionary:
+
+- ANSWERED: Indicator for whether the call was answered.
+- INCOME:  Annual income of customer
+- FEMALE: Indicator for whether the customer is female
+- AGE:  Age of customer
+- JOB:  Indicator for  job type.
+- NUM_DEPENDENTS:  Number of dependents.
+- RENT:  Indicator for whether customer rents
+- OWN_RES:  Indicator for whether  customer owns residence
+- NEW_CAR:  Indicator of whether the  customer owns a new car
+- CHK_ACCT: Number of checking accounts
+- SAV_ACCT: Number of savings accounts
+- NUM_ACCTS:  Total number of   other accounts
+- MOBILE:  Indicator for whether the call back number is mobile
+- PRODUCT:  Type of product purchased. (0 represents no purchase)
+
+
+```{r}
+d <- read_csv("adviseinvest_clean.csv")  %>%
+  select(-answered) %>% 
+  mutate(purchased = factor(ifelse(product==0, "no","yes")),
+         female = factor(female),
+         job = factor(job),
+         rent = factor(rent),
+         own_res = factor(own_res),
+         new_car = factor(new_car),
+         mobile = factor(mobile)) %>% 
+  select(-product)
+
+
+```
+
+## Questions
+
+### Q1. 
+Fit a model of purchased using all the available predictors. (Take care to follow the data preparation steps in the RMarkdown template carefully.) What is the accuracy of that model?
+
+```{r}
+# Fit tree model to for purchased
+tree_model <- rpart(purchased ~ ., data=d)
+
+# Confusion matrix
+table(predicted = predict(tree_model, type="class"), 
+      observed=d$purchased)
+
+# Accuracy
+sum(d$purchased == predict(tree_model, type="class")) / nrow(d)
+```
+
+### Q2. 
+You would like to provide some guidance to AdviseInvest for which customers should be scheduled for a call based on the tree model’s class label predictions of which customers will purchase an AdviseInvest product. What proportion of the customers in the dataset would it make sense to schedule for a call? Assume that all the customers predicted to purchase (using the default setting in the predict function: type = “class”) actually will purchase.
+
+
+```{r}
+
+# Assuming we should call everyone we predict to purchase, we want the proportion of predicted==yes to all customers
+sum(predict(tree_model, type="class") == 'yes') / nrow(d)
+
+```
+
+
+### Q3
+Create a ranked contact list for AdviseInvest with the customers who have the highest model-estimated probability of purchasing at the top of the list. How many customers are grouped together at the highest estimated probability? Hint: create a table with the number of customers at each level of probability using the count() function.
+
+
+
+```{r}
+
+# Return an object with the probability of purchasing for each customer in data set 
+probability_list <- d %>% 
+  mutate(probability = predict(tree_model, type="prob")[,2]) %>%
+  select(probability)
+
+# Count each unique probability value, find count at highest value
+count(probability_list, probability) %>%
+  arrange(desc(probability))
+
+```
+
+### Q4
+Your contact at AdviseInvest has reported that utilization of sale representatives is currently at about 50% due to a poor answer rate. Could you use your model to improve utilization? Explain your answer.
+
+*Answer*
+This particular model is predicting whether someone will purchase. Since purchasing is contingent on answering in this scenario, we have already filtered out those who didn’t answer. Since this model does not include those who answered but did not purchase, we would be missing a whole segment of customers who would simply increase the time our sales reps are talking with someone. I would advise a different model be created that incorporates answering in addition to purchasing.
+
+
+
+### Q5
+Here is a profit curve for the AdviseInvest case with revenue per customer who purchases estimated at $100 and the cost associated with a call estimated at $25. We have assumed that all customers who were called will purchase a product. Given this result, approximately what percentage of customers should be called in order to maximize profit?
+
+*Answer*
+~66% of customers
+
+### Q6
+Reproduce the above plot and upload a screenshot of your code and the resulting plot.
+
+```{r}
+# Define revenue and cost
+revenue <- 100
+cost <- 25
+
+# Make plot
+d %>%
+  mutate(probability = predict(tree_model, type="prob")[,2]) %>%
+  arrange(desc(probability)) %>%
+  mutate(profit = ifelse(purchased == "yes", revenue - cost, -cost),
+         cum_profit = cumsum(profit),
+         customers = 1:n() / n()) %>%
+  ggplot(aes(customers, cum_profit)) + 
+  geom_line() + 
+  ggtitle("Profit curve for tree classifier of purchase in AdviseInvest case") + 
+  xlab("proportion of customers (decreasing by score)") + 
+  ylab("cumulative profit") + 
+  theme_minimal()
+
+```
+
+
+
+### Q7
+Develop some recommendations for the client, the Director of Sales at AdviseInvest. To do that you will need to revisit the business problem and think about the business value of your models. For example, in modeling purchase and constructing a profit curve we have treated the business problem as one of profit. Would it make more sense to treat this as a problem of utilization instead, as originally suggested by the Director of Sales? What, concretely, would you recommend that AdviseInvest do? How should your analytical results be operationalized?
+
+Write a paragraph or two in which you clearly describe and argue for your recommendations. You will be graded on the extent to which you are able to:
+
+Precisely frame the business problem.
+Use predictive modeling results to do prescriptive analytics.
+Write clearly and compellingly without mistakes (such as spelling errors) and without relying on jargon. The Director of Sales is knowledgeable about analytics but is not an expert statistician.
+Feel free to upload a plot if you think it would help you make your case.
+```{r}
+
+# Estimate benefit - probability of purchasing, given calling * profit of purchasing minus cost, plus probability of not purchasing given calling * profit of not purchasing minus cost
+
+prob_purchasing <- sum(predict(tree_model, type="class") == 'yes') / nrow(d)
+prob_not_purchasing <- 1-prob_purchasing
+profit_purchasing <- revenue-cost
+profit_not_purchasing <- -cost
+  
+eb <- prob_purchasing*profit_purchasing + prob_not_purchasing*profit_not_purchasing
+
+```
+
+
+### Q7 Answer
+
+*What we're delivering*
+We're providing two models to help more evenly distribute web form lead calls amoung sales reps, prioritizing those calls with higher buying potential first. We assume calls with higher purchasing potential will also be longer in duration, allowing your reps to spend more quality time with whom it will have the greatest impact. We anticipate for each hour, each rep will talk with at least one high potential customer.  
+
+*Using the Models*
+Follow the tree diagrams for both models for each lead of every hour call block. This will provide two numbers for each customer: the probability of answering and the probability of purchasing. Multiply these two numbers together for that lead. Simply sort the list of leads, descending by this final number. The resulting list will be the order in which reps should pull their next call. 
+
+*Further Detail*
+If time within each hour block is a concern, we suggest prioritizing those leads with a minimum of 50% probability of purchasing. You can see below that this will not necessarily optimize for those who answer, but there is a lot stronger likelyhood of purchasing for those who do answer. Additionally, leads with 3 checking accounts should be the highest priority. This segment has one of the highest probabilities of purchasing. 
+
+*Further Improvement*
+Assuming purchasing calls will be the longest in duration, this simple approach should improve utilization of sales reps. Additional data could further increase the time with which each rep is actively talking to a customer: the call length and the sales rep on each product sale. We anticipate a lead distribution process which includes this data would further optimize utilization by gaining a better estimate of call time and potentially increase purchases by pairing the right rep with the right lead. 
+
+** Note: an answer model is also provided in my r-markdown file
+
+
+```{r}
+
+# create new object with all data
+d_full <- read_csv("adviseinvest_clean.csv")  %>%
+  mutate(purchased = factor(ifelse(product==0, "no","yes")),
+         answered = factor(ifelse(answered==0, "no","yes")),
+         female = factor(female),
+         job = factor(job),
+         rent = factor(rent),
+         own_res = factor(own_res),
+         new_car = factor(new_car),
+         mobile = factor(mobile)) %>%
+  select(-product)
+
+# create new object, including answered variable
+d_ans <- read_csv("adviseinvest_clean.csv")  %>%
+  mutate(answered = factor(ifelse(answered==0, "no","yes")),
+         female = factor(female),
+         job = factor(job),
+         rent = factor(rent),
+         own_res = factor(own_res),
+         new_car = factor(new_car),
+         mobile = factor(mobile)) %>%
+  select(-product)
+
+# create answer model for sales
+answer_model <- rpart(answered ~ ., data=d_ans)
+
+# is there a distinction for those who answer, varing by checking account?
+d_full %>%
+  mutate(p=predict(tree_model, type="prob")[,2]) %>%
+  ggplot(aes(answered, p)) + 
+  geom_jitter()+ 
+  facet_wrap(~chk_acct) + 
+  labs(title="Probability of purchasing, given answering and number of checking accounts", x="Call Answered", y="Probability of Purchasing")
+
+
+
+```
+
+

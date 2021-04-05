@@ -1,0 +1,6 @@
+"0","# answered true over total answered"
+"0","sum(d$answered== 'yes')/sum(d$answered=='no' | d$answered=='yes')"
+"1","[1]"
+"1"," 0.543"
+"1","
+"

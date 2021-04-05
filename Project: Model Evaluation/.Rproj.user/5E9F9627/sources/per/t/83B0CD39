@@ -1,0 +1,25 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1569114087761.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "1753911048",
+    "id" : "83B0CD39",
+    "lastKnownWriteTime" : 1569110524,
+    "last_content_update" : 1569110524,
+    "path" : "~/Desktop/IS 6487/Project: Model Evaluation/adviseinvest_clean.csv",
+    "project_path" : "adviseinvest_clean.csv",
+    "properties" : {
+        "cursorPosition" : "38,32",
+        "scrollLine" : "0"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 4,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "text"
+}

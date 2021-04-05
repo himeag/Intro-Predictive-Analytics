@@ -1,0 +1,26 @@
+{
+    "collab_server" : "",
+    "contents" : "",
+    "created" : 1567720983347.000,
+    "dirty" : false,
+    "encoding" : "UTF-8",
+    "folds" : "",
+    "hash" : "3640183655",
+    "id" : "B7D7034",
+    "lastKnownWriteTime" : 1568258744,
+    "last_content_update" : 1568258744665,
+    "path" : "~/Desktop/IS 6487/Project: Data Prep/Quiz.Rmd",
+    "project_path" : "Quiz.Rmd",
+    "properties" : {
+        "cursorPosition" : "107,40",
+        "scrollLine" : "0",
+        "tempName" : "Untitled1"
+    },
+    "read_only" : false,
+    "read_only_alternatives" : [
+    ],
+    "relative_order" : 1,
+    "source_on_save" : false,
+    "source_window" : "",
+    "type" : "r_markdown"
+}

@@ -1,0 +1,6 @@
+"0","sum(predict(tree_model, type=""class"") == 'yes') / nrow(d)
+"
+"1","[1]"
+"1"," 0.5434"
+"1","
+"

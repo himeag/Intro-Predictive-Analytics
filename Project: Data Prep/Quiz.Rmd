@@ -1,0 +1,114 @@
+---
+title: 'Project: Data Preparation and Exploration: IS 6487-090 Fall 2019 Intro to
+  Bus Analytics'
+author: "Meag Tessmann"
+date: "9/5/2019"
+output: html_document
+---
+
+## Project: Data Preparation and Exploration
+
+This project assignment challenges you to take what you observed there--workflow, exploration and visualization strategies, specific code--and apply it to the case from last module, AdviseInvest,  for which you developed interview questions and wrote a business problem statement. The business understanding you acquired there will inform the data work you do in this exercise.  Your assignment is to download the data, clean it as directed below, and perform some basic data summaries and visualizations. Use your results to answer the quiz questions. Note:  You get one try at this quiz.
+
+```{r}
+# Load packages
+library(dplyr)
+library(tidyverse)
+library()
+
+# Import data & familiarize
+
+df <- read.csv("adviseinvest_dirty.csv")
+summary(df)
+glimpse(df)
+
+
+```
+
+## Questions 1
+
+The target variable for this project is /Answered/
+
+
+## Question 2
+
+Two non-binary factor variables are: Job and Product
+
+## Question 3
+
+``` {r}
+
+# Question 3
+
+# Remove rows with NAs - new_car
+# Remove the row with the single outlier in num_accts
+# Remove the rows with negative income values.
+# Make the 2 variables you have identified in the previous question into factors. - job & product
+
+df_clean <- df %>%
+    filter(
+      !is.na(new_car),
+      num_accts < 1000,
+      income > 0,
+    )
+
+df_clean <- df_clean %>%
+    mutate(job = factor(job)) %>%
+    mutate(product = factor(product))
+
+summary(df_clean)
+
+```
+``` {r}
+
+print('Mean is: ')
+mean(df_clean$answered)
+
+
+```
+
+## Question 4
+
+
+``` {r}
+
+# Question 4
+
+# Turn answered var into factor
+df_clean <- df_clean %>%
+  mutate(answered=factor(answered))
+
+# Rename factor levels for clarity
+df_clean <- df_clean %>%
+  mutate(answered=recode_factor(answered, '0'="no", '1'="yes"))
+  
+# Plot answered agaisnt number of checking accounts
+ggplot(df_clean, aes(answered, chk_acct)) + 
+  geom_boxplot() + 
+  ggtitle("Answered ~ Number of Checking Accounts")
+
+
+```
+
+This plot is showing checking accounts agaisnt whether they answered. It seems like this is a variable we should be using - 75% of respondents who answered had 1 or more checking accounts, while 75% of those who did not answer did not have a checking account. (It could be possible this is being filled in with a 0 for those customers who we don't know they checking account info, or who have not given it to us - which could mean those customers who do not trust giving their data out also do not answer marketing calls)
+
+## Question 5
+
+``` {r}
+# change mobile to factor and rename levels
+df_clean <- df_clean %>%
+  mutate(mobile=factor(mobile))  %>%
+  mutate(mobile = recode_factor(mobile, '0'="Is not mobile", '1'="Is mobile"))
+ 
+# plot proportions of answered and mobile binary variables 
+df_clean %>%
+  count(answered, mobile) %>%
+  ggplot(aes(answered, n, fill=mobile)) + 
+  geom_col(position = "dodge") + 
+  ggtitle("Answered ~ Is Mobile Number")
+
+```
+
+It looks like a lot more people do not have a mobile than do for a callback number. Given a person has a mobile call back number, they are 3x more likely to answer — 74% (1983) versus 26% (704). Given people who do not have a mobile, the outcome is less interesting, with not answering and answering being quite close - 47% and 53% respectively. While this could be interesting variable to consider, less than 10% of people (9.1%) in our sample population have a mobile. We cannot rely on this variable alone. 
+
+

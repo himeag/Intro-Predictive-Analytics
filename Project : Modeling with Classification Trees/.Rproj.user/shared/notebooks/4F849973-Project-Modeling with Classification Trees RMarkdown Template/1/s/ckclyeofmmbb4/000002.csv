@@ -1,0 +1,27 @@
+"0","d <- read_csv(""adviseinvest_clean.csv"")  %>%"
+"0","  select(-product) %>% "
+"0","  mutate(answered = factor(ifelse(answered==0, ""no"",""yes"")),"
+"0","         female = factor(female),"
+"0","         job = factor(job),"
+"0","         rent = factor(rent),"
+"0","         own_res = factor(own_res),"
+"0","         new_car = factor(new_car),"
+"0","         mobile = factor(mobile)) "
+"2","Parsed with column specification:
+cols(
+  answered = [32mcol_double()[39m,
+  income = [32mcol_double()[39m,
+  female = [32mcol_double()[39m,
+  age = [32mcol_double()[39m,
+  job = [32mcol_double()[39m,
+  num_dependents = [32mcol_double()[39m,
+  rent = [32mcol_double()[39m,
+  own_res = [32mcol_double()[39m,
+  new_car = [32mcol_double()[39m,
+  chk_acct = [32mcol_double()[39m,
+  sav_acct = [32mcol_double()[39m,
+  num_accts = [32mcol_double()[39m,
+  mobile = [32mcol_double()[39m,
+  product = [32mcol_double()[39m
+)
+"
